@@ -1,12 +1,32 @@
 import express from "express";
+import http from "http";
+import { Server } from "socket.io";
+import cors from "cors";
+
+// Import socket handlers
+import gameSocket from "./sockets/gameSocket.js";
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+app.use(cors());
+app.use(express.json());
+
+// HTTP server wrapper (needed for sockets)
+const server = http.createServer(app);
+
+// Attach socket.io
+const io = new Server(server, {
+  cors: {
+    origin: "*", // later restrict to your frontend URL
+    methods: ["GET", "POST"],
+  },
+});
+
+// Use socket handlers
+gameSocket(io);
 
 app.get("/", (req, res) => {
-  res.send("Hello, World!");
+  res.send("QuickDoodle Backend is running...");
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-});
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
