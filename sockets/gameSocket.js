@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+import { generate } from "random-words";
 
 let rooms = {}; // in-memory store for now
 
@@ -9,9 +10,16 @@ export default function gameSocket(io) {
     // Create Room
     socket.on("createRoom", (username, callback) => {
       const roomId = uuidv4();
-      rooms[roomId] = { players: [username], roomId };
+      const word = generate({ minLength: 4, maxLength: 10 });
+
+      rooms[roomId] = {
+        players: [username],
+        roomId,
+        word, // store the secret word
+        drawer: username, // creator is the first drawer
+      };
       socket.join(roomId);
-      console.log(`${username} created room ${roomId}`);
+      console.log(`${username} created room ${roomId} with word: ${word}`);
       callback({ roomId });
     });
 
@@ -35,7 +43,15 @@ export default function gameSocket(io) {
 
     // Chat/Guess messages
     socket.on("message", ({ roomId, username, text }) => {
-      io.to(roomId).emit("message", { username, text });
+      const room = rooms[roomId];
+      if (!room) return;
+
+      if (text.toLowerCase() === room.word.toLowerCase()) {
+        io.to(roomId).emit("winner", { username, word: room.word });
+        // optionally reset or choose next drawer
+      } else {
+        io.to(roomId).emit("message", { username, text });
+      }
     });
 
     // Disconnect
