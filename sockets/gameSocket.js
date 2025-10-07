@@ -53,6 +53,7 @@ export default function gameSocket(io) {
           wordLength: word.length,
           players: rooms[roomId].players,
           round: 1,
+          riddler: username,
         });
 
         if (typeof callback === "function") callback({ success: true, roomId });
@@ -100,6 +101,7 @@ export default function gameSocket(io) {
           wordLength: room.word.length,
           players: publicPlayers(room),
           round: room.round,
+          riddler: room.riddler,
         });
 
         // Notify everyone about updated player list
@@ -164,6 +166,7 @@ export default function gameSocket(io) {
           io.to(roomId).emit("newRound", {
             wordLength: room.word.length,
             round: room.round,
+            riddler: newRiddler.name,
           });
 
           // send the secret word only to riddler
