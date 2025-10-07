@@ -30,6 +30,7 @@ export default function gameSocket(io) {
           roomId,
           word,
           round: 1,
+          riddler: username, // ✅ add this line
           players: [
             {
               id: socket.id,
@@ -38,6 +39,7 @@ export default function gameSocket(io) {
               isHost: true,
             },
           ],
+          scores: {}, // ✅ also init scores to avoid undefined later
         };
 
         socket.join(roomId);
@@ -133,54 +135,60 @@ export default function gameSocket(io) {
       if (
         String(guess).trim().toLowerCase() === String(room.word).toLowerCase()
       ) {
-        // correct guess
-        room.scores[username] = (room.scores[username] || 0) + 10;
+        // ✅ Correct guess
+        room.scores[username] = (room.scores?.[username] || 0) + 10;
 
-        // Also update player's score object in players array
+        // update player's score in array
         const playerObj = room.players.find((p) => p.name === username);
         if (playerObj) playerObj.score = room.scores[username];
 
         io.to(roomId).emit("winner", { username, word: room.word });
 
-        // Start next round (simple: keep same riddler for now)
+        // ✅ rotate riddler to next player after a short delay
         setTimeout(() => {
           room.round = (room.round || 1) + 1;
+
+          // find current riddler index (if not set, start from 0)
+          const riddlerIndex = room.players.findIndex(
+            (p) => p.name === room.riddler
+          );
+          const nextRiddlerIndex =
+            riddlerIndex === -1 ? 0 : (riddlerIndex + 1) % room.players.length;
+
+          // assign next riddler and new word
+          const newRiddler = room.players[nextRiddlerIndex];
+          room.riddler = newRiddler.name;
           room.word = generate({ minLength: 4, maxLength: 10 });
 
-          // notify everyone that new round started (players get wordLength only)
+          // notify everyone that new round started
           io.to(roomId).emit("newRound", {
             wordLength: room.word.length,
             round: room.round,
           });
 
-          // send secret word only to riddler's socket (find riddler socket by name)
-          const riddlerObj = room.players.find((p) => p.name === room.riddler);
-          if (riddlerObj) {
-            io.to(riddlerObj.id).emit("roomInfo", {
-              roomId,
-              role: "riddler",
-              word: room.word,
-              wordLength: room.word.length,
-              players: publicPlayers(room),
-              round: room.round,
-            });
-          }
+          // send the secret word only to riddler
+          io.to(newRiddler.id).emit("roomInfo", {
+            roomId,
+            role: "riddler",
+            word: room.word,
+            wordLength: room.word.length,
+            players: publicPlayers(room),
+            round: room.round,
+          });
 
-          // broadcast updated players (scores changed)
+          // broadcast updated players and scores
           io.to(roomId).emit("updatePlayers", publicPlayers(room));
         }, 2500);
       } else {
-        // optional: notify guesser they are wrong (private), and broadcast the guess as chat as well
+        // ❌ wrong guess
         socket.emit("wrongGuess", { guess, username });
-        const msg = {
+        io.to(roomId).emit("message", {
           id: Date.now().toString(),
           player: username,
           text: guess,
           isSystem: false,
           timestamp: Date.now(),
-        };
-        // broadcast guess as chat (you can decide whether to broadcast)
-        io.to(roomId).emit("message", msg);
+        });
       }
     });
 
