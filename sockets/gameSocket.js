@@ -16,7 +16,9 @@ export default function gameSocket(io) {
         players: [username],
         roomId,
         word, // store the secret word
-        drawer: username, // creator is the first drawer
+        mode: "riddle", // or "draw"
+        riddler: "TesterUser",
+        scores: {},
       };
       socket.join(roomId);
       console.log(`${username} created room ${roomId} with word: ${word}`);
@@ -48,7 +50,7 @@ export default function gameSocket(io) {
 
       if (text.toLowerCase() === room.word.toLowerCase()) {
         io.to(roomId).emit("winner", { username, word: room.word });
-        // optionally reset or choose next drawer
+        // optionally reset or choose next riddler/drawer
       } else {
         io.to(roomId).emit("message", { username, text });
       }
