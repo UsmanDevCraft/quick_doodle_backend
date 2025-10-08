@@ -22,6 +22,7 @@ export default function gameSocket(io) {
 
     // CREATE ROOM
     // payload can be { roomId?, username } - frontend should pass both ideally
+    // CREATE ROOM
     socket.on("createRoom", ({ roomId, username }, callback) => {
       try {
         const word = generate({ minLength: 4, maxLength: 10 });
@@ -30,7 +31,7 @@ export default function gameSocket(io) {
           roomId,
           word,
           round: 1,
-          riddler: username, // ✅ add this line
+          riddler: username,
           players: [
             {
               id: socket.id,
@@ -39,13 +40,13 @@ export default function gameSocket(io) {
               isHost: true,
             },
           ],
-          scores: {}, // ✅ also init scores to avoid undefined later
+          scores: {},
         };
 
         socket.join(roomId);
         console.log(`${username} created room ${roomId} with word: ${word}`);
 
-        // send riddler info only to the creator
+        // ✅ send riddler info only to the creator (immediate)
         socket.emit("roomInfo", {
           roomId,
           role: "riddler",
@@ -55,6 +56,19 @@ export default function gameSocket(io) {
           round: 1,
           riddler: username,
         });
+
+        // ✅ re-emit after small delay to ensure FE listeners are ready
+        setTimeout(() => {
+          socket.emit("roomInfo", {
+            roomId,
+            role: "riddler",
+            word,
+            wordLength: word.length,
+            players: rooms[roomId].players,
+            round: 1,
+            riddler: username,
+          });
+        }, 300);
 
         if (typeof callback === "function") callback({ success: true, roomId });
       } catch (err) {
