@@ -70,6 +70,14 @@ export default function gameSocket(io) {
           });
         }, 300);
 
+        // ✅ Also trigger "newRound" for the riddler so FE shows the word immediately
+        socket.emit("newRound", {
+          wordLength: word.length,
+          round: 1,
+          riddler: username,
+          word, // send the word so riddler sees it immediately
+        });
+
         if (typeof callback === "function") callback({ success: true, roomId });
       } catch (err) {
         console.error("createRoom error:", err);
@@ -127,6 +135,25 @@ export default function gameSocket(io) {
         if (typeof callback === "function")
           callback({ success: false, message: "server error" });
       }
+    });
+
+    // Handle requestRoomInfo — resend latest room info
+    socket.on("requestRoomInfo", ({ roomId, username }) => {
+      const room = rooms[roomId];
+      if (!room) return;
+
+      const player = room.players.find((p) => p.name === username);
+      const isRiddler = room.riddler === username;
+
+      socket.emit("roomInfo", {
+        roomId,
+        role: isRiddler ? "riddler" : "guesser",
+        word: isRiddler ? room.word : null,
+        wordLength: room.word.length,
+        players: room.players,
+        riddler: room.riddler,
+        round: room.round,
+      });
     });
 
     // CHAT message (separate event for chat)
