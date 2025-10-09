@@ -16,7 +16,6 @@
     "mongoose": "^8.19.1",
     "random-words": "^2.0.1",
     "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
