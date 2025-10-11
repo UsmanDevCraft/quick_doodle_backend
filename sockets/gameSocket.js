@@ -9,10 +9,11 @@ export default function gameSocket(io) {
     console.log("⚡ New client connected:", socket.id);
 
     const getRoom = (roomId) => rooms[roomId];
+
     const publicPlayers = (room) =>
       room.players.map((p) => ({
-        id: p.id,
-        name: p.name,
+        id: p.socketId,
+        name: p.username,
         score: p.score,
         isHost: p.isHost,
       }));
@@ -28,31 +29,48 @@ export default function gameSocket(io) {
             {
               $set: {
                 roomId: room.roomId,
-                word: room.word,
-                round: room.round,
-                riddler: room.riddler,
+                host: room.host,
+                currentWord: room.currentWord,
+                currentRound: room.currentRound,
                 players: room.players,
-                scores: room.scores,
+                rounds: room.rounds,
+                isActive: room.isActive,
+                createdAt: room.createdAt,
               },
             },
             { upsert: true }
           );
+          console.log(`Room ${room.roomId} saved to DB`);
         } catch (err) {
           console.error("DB Save Error:", err);
         }
-      }, 1000); // waits 1s before writing
+      }, 1000); // Debounce save to DB
     };
 
     const loadRoomFromDB = async (roomId) => {
       const data = await Room.findOne({ roomId });
       if (data) {
-        const clean = data.toObject();
-        delete clean._id;
-        delete clean.__v;
-        rooms[roomId] = clean;
+        const room = data.toObject();
+        delete room._id;
+        delete room.__v;
+        rooms[roomId] = {
+          roomId: room.roomId,
+          host: room.host,
+          currentWord: room.currentWord,
+          currentRound: room.currentRound,
+          players: room.players.map((p) => ({
+            socketId: p.socketId,
+            username: p.username,
+            score: p.score,
+            isHost: p.isHost,
+            joinedAt: p.joinedAt,
+          })),
+          rounds: room.rounds,
+          isActive: room.isActive,
+          createdAt: room.createdAt,
+        };
         console.log(`Room ${roomId} restored from DB`);
       }
-
       return rooms[roomId];
     };
 
@@ -62,14 +80,32 @@ export default function gameSocket(io) {
         const word = generate({ minLength: 4, maxLength: 10 });
         rooms[roomId] = {
           roomId,
-          word,
-          round: 1,
-          riddler: username,
-          players: [{ id: socket.id, name: username, score: 0, isHost: true }],
-          scores: {},
+          host: username,
+          currentWord: word,
+          currentRound: 1,
+          players: [
+            {
+              socketId: socket.id,
+              username,
+              score: 0,
+              isHost: true,
+              joinedAt: new Date(),
+            },
+          ],
+          rounds: [
+            {
+              roundNumber: 1,
+              word,
+              riddler: username,
+              guesses: [],
+              startedAt: new Date(),
+            },
+          ],
+          isActive: true,
+          createdAt: new Date(),
         };
 
-        await saveRoomToDB(rooms[roomId]); // 🧩 save new room
+        await saveRoomToDB(rooms[roomId]);
 
         socket.join(roomId);
         console.log(`${username} created room ${roomId} with word: ${word}`);
@@ -79,15 +115,15 @@ export default function gameSocket(io) {
           role: "riddler",
           word,
           wordLength: word.length,
-          players: rooms[roomId].players,
-          round: 1,
+          players: publicPlayers(rooms[roomId]),
+          round: rooms[roomId].currentRound,
           riddler: username,
         });
 
         setTimeout(() => {
           socket.emit("newRound", {
             wordLength: word.length,
-            round: 1,
+            round: rooms[roomId].currentRound,
             riddler: username,
             word,
           });
@@ -105,41 +141,42 @@ export default function gameSocket(io) {
       try {
         let room = getRoom(roomId);
 
-        // 🔁 if not in memory, recover from DB
+        // 🔁 If not in memory, recover from DB
         if (!room) {
           room = await loadRoomFromDB(roomId);
           if (!room)
             return callback?.({ success: false, message: "Room not found" });
         }
 
-        const already = room.players.find(
-          (p) => p.id === socket.id || p.name === username
-        );
+        const already = room.players.find((p) => p.username === username);
 
         if (!already) {
           room.players.push({
-            id: socket.id,
-            name: username,
+            socketId: socket.id,
+            username,
             score: 0,
             isHost: false,
+            joinedAt: new Date(),
           });
         } else {
-          already.id = socket.id;
-          already.name = username;
+          already.socketId = socket.id; // Update socket ID if player rejoins
         }
 
         socket.join(roomId);
         console.log(`${username} joined room ${roomId}`);
 
-        await saveRoomToDB(room); // 🧩 sync join to DB
+        await saveRoomToDB(room);
 
         socket.emit("roomInfo", {
           roomId,
-          role: "player",
-          wordLength: room.word.length,
+          role:
+            room.rounds[room.currentRound - 1].riddler === username
+              ? "riddler"
+              : "player",
+          wordLength: room.currentWord.length,
           players: publicPlayers(room),
-          round: room.round,
-          riddler: room.riddler,
+          round: room.currentRound,
+          riddler: room.rounds[room.currentRound - 1].riddler,
         });
 
         io.to(roomId).emit("updatePlayers", publicPlayers(room));
@@ -156,15 +193,15 @@ export default function gameSocket(io) {
       let room = rooms[roomId] || (await loadRoomFromDB(roomId));
       if (!room) return;
 
-      const isRiddler = room.riddler === username;
+      const isRiddler = room.rounds[room.currentRound - 1].riddler === username;
       socket.emit("roomInfo", {
         roomId,
         role: isRiddler ? "riddler" : "guesser",
-        word: isRiddler ? room.word : null,
-        wordLength: room.word.length,
-        players: room.players,
-        riddler: room.riddler,
-        round: room.round,
+        word: isRiddler ? room.currentWord : null,
+        wordLength: room.currentWord.length,
+        players: publicPlayers(room),
+        riddler: room.rounds[room.currentRound - 1].riddler,
+        round: room.currentRound,
       });
     });
 
@@ -187,42 +224,63 @@ export default function gameSocket(io) {
       const room = getRoom(roomId);
       if (!room) return;
 
-      if (guess.trim().toLowerCase() === room.word.toLowerCase()) {
-        room.scores[username] = (room.scores?.[username] || 0) + 10;
+      const currentRound = room.rounds[room.currentRound - 1];
+      const isCorrect =
+        guess.trim().toLowerCase() === room.currentWord.toLowerCase();
 
-        const player = room.players.find((p) => p.name === username);
-        if (player) player.score = room.scores[username];
+      // Save guess to the current round
+      currentRound.guesses.push({
+        player: username,
+        guess,
+        correct: isCorrect,
+        timestamp: new Date(),
+      });
 
-        io.to(roomId).emit("winner", { username, word: room.word });
+      if (isCorrect) {
+        const player = room.players.find((p) => p.username === username);
+        if (player) {
+          player.score += 10;
+          currentRound.winner = username;
+          currentRound.endedAt = new Date();
+        }
+
+        io.to(roomId).emit("winner", { username, word: room.currentWord });
 
         setTimeout(async () => {
-          room.round++;
+          // Start new round
+          room.currentRound++;
           const riddlerIndex = room.players.findIndex(
-            (p) => p.name === room.riddler
+            (p) => p.username === room.rounds[room.currentRound - 2]?.riddler
           );
           const nextRiddler =
             room.players[(riddlerIndex + 1) % room.players.length];
 
-          room.riddler = nextRiddler.name;
-          room.word = generate({ minLength: 4, maxLength: 10 });
-
-          io.to(roomId).emit("newRound", {
-            wordLength: room.word.length,
-            round: room.round,
-            riddler: nextRiddler.name,
+          room.currentWord = generate({ minLength: 4, maxLength: 10 });
+          room.rounds.push({
+            roundNumber: room.currentRound,
+            word: room.currentWord,
+            riddler: nextRiddler.username,
+            guesses: [],
+            startedAt: new Date(),
           });
 
-          io.to(nextRiddler.id).emit("roomInfo", {
+          io.to(roomId).emit("newRound", {
+            wordLength: room.currentWord.length,
+            round: room.currentRound,
+            riddler: nextRiddler.username,
+          });
+
+          io.to(nextRiddler.socketId).emit("roomInfo", {
             roomId,
             role: "riddler",
-            word: room.word,
+            word: room.currentWord,
             players: publicPlayers(room),
-            round: room.round,
+            round: room.currentRound,
           });
 
           io.to(roomId).emit("updatePlayers", publicPlayers(room));
 
-          await saveRoomToDB(room); // 🧩 save after round
+          await saveRoomToDB(room);
         }, 2500);
       } else {
         io.to(roomId).emit("message", {
@@ -233,6 +291,8 @@ export default function gameSocket(io) {
           timestamp: Date.now(),
         });
       }
+
+      await saveRoomToDB(room); // Save guesses and updates
     });
 
     // 🖊 Drawing
@@ -245,21 +305,17 @@ export default function gameSocket(io) {
       console.log("❌ Client disconnected:", socket.id);
 
       for (const [roomId, room] of Object.entries(rooms)) {
-        const leftIndex = room.players.findIndex((p) => p.id === socket.id);
+        const leftIndex = room.players.findIndex(
+          (p) => p.socketId === socket.id
+        );
         if (leftIndex !== -1) {
           const [left] = room.players.splice(leftIndex, 1);
-          console.log(`${left.name} left room ${roomId}`);
+          console.log(`${left.username} left room ${roomId}`);
 
-          delete room.scores[left.name];
           io.to(roomId).emit("updatePlayers", publicPlayers(room));
 
-          if (room.players.length === 0) {
-            await Room.deleteOne({ roomId }); // 🧩 cleanup DB too
-            delete rooms[roomId];
-            console.log(`Room ${roomId} removed (empty).`);
-          } else {
-            await saveRoomToDB(room); // 🧩 save updated players
-          }
+          // Do NOT delete the room from DB, just save the updated state
+          await saveRoomToDB(room);
           break;
         }
       }
