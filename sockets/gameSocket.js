@@ -34,6 +34,7 @@ export default function gameSocket(io) {
                 currentRound: room.currentRound,
                 players: room.players,
                 rounds: room.rounds,
+                chats: room.chats, // Save chats to DB
                 isActive: room.isActive,
                 createdAt: room.createdAt,
               },
@@ -66,6 +67,7 @@ export default function gameSocket(io) {
             joinedAt: p.joinedAt,
           })),
           rounds: room.rounds,
+          chats: room.chats || [], // Load chats from DB
           isActive: room.isActive,
           createdAt: room.createdAt,
         };
@@ -101,6 +103,7 @@ export default function gameSocket(io) {
               startedAt: new Date(),
             },
           ],
+          chats: [], // Initialize chats array
           isActive: true,
           createdAt: new Date(),
         };
@@ -167,6 +170,7 @@ export default function gameSocket(io) {
 
         await saveRoomToDB(room);
 
+        // Send room info and existing chat messages
         socket.emit("roomInfo", {
           roomId,
           role:
@@ -177,6 +181,17 @@ export default function gameSocket(io) {
           players: publicPlayers(room),
           round: room.currentRound,
           riddler: room.rounds[room.currentRound - 1].riddler,
+        });
+
+        // Emit stored chat messages to the joining player
+        room.chats.forEach((msg) => {
+          socket.emit("message", {
+            id: msg.id,
+            player: msg.player,
+            text: msg.text,
+            isSystem: msg.isSystem,
+            timestamp: msg.timestamp,
+          });
         });
 
         io.to(roomId).emit("updatePlayers", publicPlayers(room));
@@ -203,20 +218,38 @@ export default function gameSocket(io) {
         riddler: room.rounds[room.currentRound - 1].riddler,
         round: room.currentRound,
       });
+
+      // Emit stored chat messages
+      room.chats.forEach((msg) => {
+        socket.emit("message", {
+          id: msg.id,
+          player: msg.player,
+          text: msg.text,
+          isSystem: msg.isSystem,
+          timestamp: msg.timestamp,
+        });
+      });
     });
 
     // 💬 CHAT
-    socket.on("chatMessage", ({ roomId, username, text } = {}) => {
+    socket.on("chatMessage", async ({ roomId, username, text } = {}) => {
       const room = getRoom(roomId);
       if (!room) return;
+
       const msg = {
         id: Date.now().toString(),
         player: username,
         text,
         isSystem: false,
-        timestamp: Date.now(),
+        timestamp: new Date(),
       };
+
+      // Save chat message to room
+      room.chats.push(msg);
+
       io.to(roomId).emit("message", msg);
+
+      await saveRoomToDB(room); // Save chat to DB
     });
 
     // 🎯 GUESS
@@ -246,6 +279,23 @@ export default function gameSocket(io) {
 
         io.to(roomId).emit("winner", { username, word: room.currentWord });
 
+        // Add system message to chats
+        room.chats.push({
+          id: Date.now().toString(),
+          player: "System",
+          text: `${username} guessed the word "${room.currentWord}"!`,
+          isSystem: true,
+          timestamp: new Date(),
+        });
+
+        io.to(roomId).emit("message", {
+          id: Date.now().toString(),
+          player: "System",
+          text: `${username} guessed the word "${room.currentWord}"!`,
+          isSystem: true,
+          timestamp: Date.now(),
+        });
+
         setTimeout(async () => {
           // Start new round
           room.currentRound++;
@@ -264,6 +314,15 @@ export default function gameSocket(io) {
             startedAt: new Date(),
           });
 
+          // Add system message for new round
+          room.chats.push({
+            id: Date.now().toString(),
+            player: "System",
+            text: `Round ${room.currentRound} started — ${nextRiddler.username} is the riddler!`,
+            isSystem: true,
+            timestamp: new Date(),
+          });
+
           io.to(roomId).emit("newRound", {
             wordLength: room.currentWord.length,
             round: room.currentRound,
@@ -280,9 +339,25 @@ export default function gameSocket(io) {
 
           io.to(roomId).emit("updatePlayers", publicPlayers(room));
 
+          io.to(roomId).emit("message", {
+            id: Date.now().toString(),
+            player: "System",
+            text: `Round ${room.currentRound} started — ${nextRiddler.username} is the riddler!`,
+            isSystem: true,
+            timestamp: Date.now(),
+          });
+
           await saveRoomToDB(room);
         }, 2500);
       } else {
+        room.chats.push({
+          id: Date.now().toString(),
+          player: username,
+          text: guess,
+          isSystem: false,
+          timestamp: new Date(),
+        });
+
         io.to(roomId).emit("message", {
           id: Date.now().toString(),
           player: username,
@@ -292,7 +367,7 @@ export default function gameSocket(io) {
         });
       }
 
-      await saveRoomToDB(room); // Save guesses and updates
+      await saveRoomToDB(room); // Save guesses and chats
     });
 
     // 🖊 Drawing
@@ -312,9 +387,25 @@ export default function gameSocket(io) {
           const [left] = room.players.splice(leftIndex, 1);
           console.log(`${left.username} left room ${roomId}`);
 
+          // Add system message for player leaving
+          room.chats.push({
+            id: Date.now().toString(),
+            player: "System",
+            text: `${left.username} left the room.`,
+            isSystem: true,
+            timestamp: new Date(),
+          });
+
           io.to(roomId).emit("updatePlayers", publicPlayers(room));
 
-          // Do NOT delete the room from DB, just save the updated state
+          io.to(roomId).emit("message", {
+            id: Date.now().toString(),
+            player: "System",
+            text: `${left.username} left the room.`,
+            isSystem: true,
+            timestamp: Date.now(),
+          });
+
           await saveRoomToDB(room);
           break;
         }

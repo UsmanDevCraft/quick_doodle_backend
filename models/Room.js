@@ -11,8 +11,8 @@ const PlayerSchema = new mongoose.Schema({
 const RoundSchema = new mongoose.Schema({
   roundNumber: Number,
   word: String,
-  riddler: String, // who is drawing / giving word
-  winner: String, // who guessed correctly
+  riddler: String,
+  winner: String,
   guesses: [
     {
       player: String,
@@ -25,6 +25,14 @@ const RoundSchema = new mongoose.Schema({
   endedAt: { type: Date },
 });
 
+const ChatSchema = new mongoose.Schema({
+  id: String,
+  player: String,
+  text: String,
+  isSystem: { type: Boolean, default: false },
+  timestamp: { type: Date, default: Date.now },
+});
+
 const RoomSchema = new mongoose.Schema({
   roomId: { type: String, required: true, unique: true },
   host: String,
@@ -32,6 +40,7 @@ const RoomSchema = new mongoose.Schema({
   currentRound: { type: Number, default: 1 },
   players: [PlayerSchema],
   rounds: [RoundSchema],
+  chats: [ChatSchema], // New field to store chat messages
   isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now },
 });
