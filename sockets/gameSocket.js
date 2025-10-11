@@ -34,7 +34,7 @@ export default function gameSocket(io) {
                 currentRound: room.currentRound,
                 players: room.players,
                 rounds: room.rounds,
-                chats: room.chats, // Save chats to DB
+                chats: room.chats,
                 isActive: room.isActive,
                 createdAt: room.createdAt,
               },
@@ -45,7 +45,7 @@ export default function gameSocket(io) {
         } catch (err) {
           console.error("DB Save Error:", err);
         }
-      }, 1000); // Debounce save to DB
+      }, 1000);
     };
 
     const loadRoomFromDB = async (roomId) => {
@@ -57,19 +57,30 @@ export default function gameSocket(io) {
         rooms[roomId] = {
           roomId: room.roomId,
           host: room.host,
-          currentWord: room.currentWord,
-          currentRound: room.currentRound,
+          currentWord:
+            room.currentWord || generate({ minLength: 4, maxLength: 10 }), // Fallback word
+          currentRound: room.currentRound || 1,
           players: room.players.map((p) => ({
             socketId: p.socketId,
             username: p.username,
-            score: p.score,
-            isHost: p.isHost,
-            joinedAt: p.joinedAt,
+            score: p.score || 0,
+            isHost: p.isHost || false,
+            joinedAt: p.joinedAt || new Date(),
+            connected: false, // Mark as disconnected until rejoin
           })),
-          rounds: room.rounds,
-          chats: room.chats || [], // Load chats from DB
-          isActive: room.isActive,
-          createdAt: room.createdAt,
+          rounds: room.rounds || [
+            {
+              roundNumber: 1,
+              word:
+                room.currentWord || generate({ minLength: 4, maxLength: 10 }),
+              riddler: room.host,
+              guesses: [],
+              startedAt: new Date(),
+            },
+          ],
+          chats: room.chats || [],
+          isActive: room.isActive !== false,
+          createdAt: room.createdAt || new Date(),
         };
         console.log(`Room ${roomId} restored from DB`);
       }
@@ -92,6 +103,7 @@ export default function gameSocket(io) {
               score: 0,
               isHost: true,
               joinedAt: new Date(),
+              connected: true,
             },
           ],
           rounds: [
@@ -103,7 +115,7 @@ export default function gameSocket(io) {
               startedAt: new Date(),
             },
           ],
-          chats: [], // Initialize chats array
+          chats: [],
           isActive: true,
           createdAt: new Date(),
         };
@@ -122,15 +134,6 @@ export default function gameSocket(io) {
           round: rooms[roomId].currentRound,
           riddler: username,
         });
-
-        setTimeout(() => {
-          socket.emit("newRound", {
-            wordLength: word.length,
-            round: rooms[roomId].currentRound,
-            riddler: username,
-            word,
-          });
-        }, 300);
 
         callback?.({ success: true, roomId });
       } catch (err) {
@@ -151,18 +154,22 @@ export default function gameSocket(io) {
             return callback?.({ success: false, message: "Room not found" });
         }
 
-        const already = room.players.find((p) => p.username === username);
+        const existingPlayer = room.players.find(
+          (p) => p.username === username
+        );
 
-        if (!already) {
+        if (!existingPlayer) {
           room.players.push({
             socketId: socket.id,
             username,
             score: 0,
             isHost: false,
             joinedAt: new Date(),
+            connected: true,
           });
         } else {
-          already.socketId = socket.id; // Update socket ID if player rejoins
+          existingPlayer.socketId = socket.id;
+          existingPlayer.connected = true;
         }
 
         socket.join(roomId);
@@ -171,12 +178,12 @@ export default function gameSocket(io) {
         await saveRoomToDB(room);
 
         // Send room info and existing chat messages
+        const isRiddler =
+          room.rounds[room.currentRound - 1].riddler === username;
         socket.emit("roomInfo", {
           roomId,
-          role:
-            room.rounds[room.currentRound - 1].riddler === username
-              ? "riddler"
-              : "player",
+          role: isRiddler ? "riddler" : "player",
+          word: isRiddler ? room.currentWord : null,
           wordLength: room.currentWord.length,
           players: publicPlayers(room),
           round: room.currentRound,
@@ -244,12 +251,11 @@ export default function gameSocket(io) {
         timestamp: new Date(),
       };
 
-      // Save chat message to room
       room.chats.push(msg);
 
       io.to(roomId).emit("message", msg);
 
-      await saveRoomToDB(room); // Save chat to DB
+      await saveRoomToDB(room);
     });
 
     // 🎯 GUESS
@@ -261,7 +267,6 @@ export default function gameSocket(io) {
       const isCorrect =
         guess.trim().toLowerCase() === room.currentWord.toLowerCase();
 
-      // Save guess to the current round
       currentRound.guesses.push({
         player: username,
         guess,
@@ -279,7 +284,6 @@ export default function gameSocket(io) {
 
         io.to(roomId).emit("winner", { username, word: room.currentWord });
 
-        // Add system message to chats
         room.chats.push({
           id: Date.now().toString(),
           player: "System",
@@ -297,7 +301,6 @@ export default function gameSocket(io) {
         });
 
         setTimeout(async () => {
-          // Start new round
           room.currentRound++;
           const riddlerIndex = room.players.findIndex(
             (p) => p.username === room.rounds[room.currentRound - 2]?.riddler
@@ -314,7 +317,6 @@ export default function gameSocket(io) {
             startedAt: new Date(),
           });
 
-          // Add system message for new round
           room.chats.push({
             id: Date.now().toString(),
             player: "System",
@@ -367,7 +369,7 @@ export default function gameSocket(io) {
         });
       }
 
-      await saveRoomToDB(room); // Save guesses and chats
+      await saveRoomToDB(room);
     });
 
     // 🖊 Drawing
@@ -380,31 +382,43 @@ export default function gameSocket(io) {
       console.log("❌ Client disconnected:", socket.id);
 
       for (const [roomId, room] of Object.entries(rooms)) {
-        const leftIndex = room.players.findIndex(
-          (p) => p.socketId === socket.id
-        );
-        if (leftIndex !== -1) {
-          const [left] = room.players.splice(leftIndex, 1);
-          console.log(`${left.username} left room ${roomId}`);
+        const player = room.players.find((p) => p.socketId === socket.id);
+        if (player) {
+          player.connected = false;
+          console.log(`${player.username} disconnected from room ${roomId}`);
 
-          // Add system message for player leaving
-          room.chats.push({
-            id: Date.now().toString(),
-            player: "System",
-            text: `${left.username} left the room.`,
-            isSystem: true,
-            timestamp: new Date(),
-          });
+          // Schedule removal after 30 seconds unless reconnected
+          setTimeout(async () => {
+            if (!player.connected) {
+              const leftIndex = room.players.findIndex(
+                (p) => p.socketId === socket.id
+              );
+              if (leftIndex !== -1) {
+                const [left] = room.players.splice(leftIndex, 1);
+                console.log(`${left.username} permanently left room ${roomId}`);
 
-          io.to(roomId).emit("updatePlayers", publicPlayers(room));
+                room.chats.push({
+                  id: Date.now().toString(),
+                  player: "System",
+                  text: `${left.username} left the room.`,
+                  isSystem: true,
+                  timestamp: new Date(),
+                });
 
-          io.to(roomId).emit("message", {
-            id: Date.now().toString(),
-            player: "System",
-            text: `${left.username} left the room.`,
-            isSystem: true,
-            timestamp: Date.now(),
-          });
+                io.to(roomId).emit("updatePlayers", publicPlayers(room));
+
+                io.to(roomId).emit("message", {
+                  id: Date.now().toString(),
+                  player: "System",
+                  text: `${left.username} left the room.`,
+                  isSystem: true,
+                  timestamp: Date.now(),
+                });
+
+                await saveRoomToDB(room);
+              }
+            }
+          }, 30000); // 30-second grace period for reconnect
 
           await saveRoomToDB(room);
           break;
