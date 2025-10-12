@@ -23,23 +23,27 @@ export default function gameSocket(io) {
     // ✅ FIXED saveRoomToDB — added immediate saving option
     const saveRoomToDB = async (room, immediate = false) => {
       clearTimeout(saveTimeouts[room.roomId]);
+      const dbRoom = {
+        roomId: room.roomId,
+        host: room.host,
+        currentWord: room.currentWord,
+        currentRound: room.currentRound,
+        players: room.players.map((p) => ({
+          username: p.username,
+          score: p.score,
+          isHost: p.isHost,
+          joinedAt: p.joinedAt,
+        })),
+        rounds: room.rounds,
+        chats: room.chats,
+        isActive: room.isActive,
+        createdAt: room.createdAt,
+      };
       if (immediate) {
         try {
           await Room.findOneAndUpdate(
             { roomId: room.roomId },
-            {
-              $set: {
-                roomId: room.roomId,
-                host: room.host,
-                currentWord: room.currentWord,
-                currentRound: room.currentRound,
-                players: room.players,
-                rounds: room.rounds,
-                chats: room.chats,
-                isActive: room.isActive,
-                createdAt: room.createdAt,
-              },
-            },
+            { $set: dbRoom },
             { upsert: true }
           );
           console.log(`💾 Room ${room.roomId} immediately saved to DB`);
@@ -54,19 +58,7 @@ export default function gameSocket(io) {
         try {
           await Room.findOneAndUpdate(
             { roomId: room.roomId },
-            {
-              $set: {
-                roomId: room.roomId,
-                host: room.host,
-                currentWord: room.currentWord,
-                currentRound: room.currentRound,
-                players: room.players,
-                rounds: room.rounds,
-                chats: room.chats,
-                isActive: room.isActive,
-                createdAt: room.createdAt,
-              },
-            },
+            { $set: dbRoom },
             { upsert: true }
           );
           console.log(`Room ${room.roomId} saved (debounced)`);
@@ -90,12 +82,12 @@ export default function gameSocket(io) {
             room.currentWord || generate({ minLength: 4, maxLength: 10 }),
           currentRound: room.currentRound || 1,
           players: room.players.map((p) => ({
-            socketId: p.socketId,
             username: p.username,
             score: p.score || 0,
             isHost: p.isHost || false,
             joinedAt: p.joinedAt || new Date(),
-            connected: true, // ✅ FIXED (was false before)
+            socketId: null,
+            connected: false,
           })),
           rounds: room.rounds || [
             {
