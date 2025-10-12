@@ -20,8 +20,36 @@ export default function gameSocket(io) {
 
     const saveTimeouts = {};
 
-    const saveRoomToDB = async (room) => {
+    // ✅ FIXED saveRoomToDB — added immediate saving option
+    const saveRoomToDB = async (room, immediate = false) => {
       clearTimeout(saveTimeouts[room.roomId]);
+      if (immediate) {
+        try {
+          await Room.findOneAndUpdate(
+            { roomId: room.roomId },
+            {
+              $set: {
+                roomId: room.roomId,
+                host: room.host,
+                currentWord: room.currentWord,
+                currentRound: room.currentRound,
+                players: room.players,
+                rounds: room.rounds,
+                chats: room.chats,
+                isActive: room.isActive,
+                createdAt: room.createdAt,
+              },
+            },
+            { upsert: true }
+          );
+          console.log(`💾 Room ${room.roomId} immediately saved to DB`);
+        } catch (err) {
+          console.error("DB Save Error:", err);
+        }
+        return;
+      }
+
+      // fallback debounced save
       saveTimeouts[room.roomId] = setTimeout(async () => {
         try {
           await Room.findOneAndUpdate(
@@ -41,13 +69,14 @@ export default function gameSocket(io) {
             },
             { upsert: true }
           );
-          console.log(`Room ${room.roomId} saved to DB`);
+          console.log(`Room ${room.roomId} saved (debounced)`);
         } catch (err) {
           console.error("DB Save Error:", err);
         }
       }, 1000);
     };
 
+    // ✅ FIXED loadRoomFromDB — players connected true (no forced disconnects)
     const loadRoomFromDB = async (roomId) => {
       const data = await Room.findOne({ roomId });
       if (data) {
@@ -58,7 +87,7 @@ export default function gameSocket(io) {
           roomId: room.roomId,
           host: room.host,
           currentWord:
-            room.currentWord || generate({ minLength: 4, maxLength: 10 }), // Fallback word
+            room.currentWord || generate({ minLength: 4, maxLength: 10 }),
           currentRound: room.currentRound || 1,
           players: room.players.map((p) => ({
             socketId: p.socketId,
@@ -66,7 +95,7 @@ export default function gameSocket(io) {
             score: p.score || 0,
             isHost: p.isHost || false,
             joinedAt: p.joinedAt || new Date(),
-            connected: false, // Mark as disconnected until rejoin
+            connected: true, // ✅ FIXED (was false before)
           })),
           rounds: room.rounds || [
             {
@@ -120,7 +149,7 @@ export default function gameSocket(io) {
           createdAt: new Date(),
         };
 
-        await saveRoomToDB(rooms[roomId]);
+        await saveRoomToDB(rooms[roomId], true);
 
         socket.join(roomId);
         console.log(`${username} created room ${roomId} with word: ${word}`);
@@ -145,18 +174,15 @@ export default function gameSocket(io) {
     // 🧍 JOIN ROOM
     socket.on("joinRoom", async ({ roomId, username } = {}, callback) => {
       try {
-        // Ensure room is loaded into memory
         if (!rooms[roomId]) {
           await loadRoomFromDB(roomId);
           if (!rooms[roomId])
             return callback?.({ success: false, message: "Room not found" });
         }
 
-        const room = rooms[roomId]; // always use the in-memory reference
-
+        const room = rooms[roomId];
         if (!Array.isArray(room.players)) room.players = [];
 
-        // find existing player by username
         let existingPlayer = room.players.find((p) => p.username === username);
 
         if (!existingPlayer) {
@@ -170,19 +196,16 @@ export default function gameSocket(io) {
           };
           room.players.push(newPlayer);
           console.log(
-            `✅ Added player ${username} to room ${roomId} — players: ${room.players.length}`
+            `✅ Added player ${username} to room ${roomId} — total: ${room.players.length}`
           );
         } else {
-          // reconnect case: update socketId and mark connected
           existingPlayer.socketId = socket.id;
           existingPlayer.connected = true;
           console.log(`🔁 Player ${username} reconnected to room ${roomId}`);
         }
 
-        // make socket join the room channel so broadcasts reach this socket
         socket.join(roomId);
 
-        // Emit full room info to the joining socket (so their UI becomes correct immediately)
         socket.emit("roomInfo", {
           roomId,
           role:
@@ -199,11 +222,9 @@ export default function gameSocket(io) {
           riddler: room.rounds?.[room.currentRound - 1]?.riddler || room.host,
         });
 
-        // Broadcast updated players list to everyone in the room
+        // ✅ FIXED — broadcast after join and immediate DB save
         io.to(roomId).emit("updatePlayers", publicPlayers(room));
-
-        // Save the up-to-date in-memory room to DB (debounced inside saveRoomToDB)
-        await saveRoomToDB(room);
+        await saveRoomToDB(room, true);
 
         callback?.({ success: true });
       } catch (err) {
@@ -214,17 +235,12 @@ export default function gameSocket(io) {
 
     // 🪄 REQUEST ROOM INFO
     socket.on("requestRoomInfo", async ({ roomId, username }) => {
-      // ensure the in-memory room exists
-      if (!rooms[roomId]) {
-        await loadRoomFromDB(roomId);
-      }
+      if (!rooms[roomId]) await loadRoomFromDB(roomId);
       const room = rooms[roomId];
       if (!room) return;
 
-      // put the socket back into the socket.io room (important after reloads)
       socket.join(roomId);
 
-      // If the user already exists in players, update their socketId & connected status
       if (username) {
         if (!Array.isArray(room.players)) room.players = [];
         const existing = room.players.find((p) => p.username === username);
@@ -234,16 +250,9 @@ export default function gameSocket(io) {
           console.log(
             `requestRoomInfo: marked ${username} connected for ${roomId}`
           );
-        } else {
-          // Optional: if someone wants requestRoomInfo to also add them if not present,
-          // uncomment the block below. For now we don't auto-add to avoid accidental adds.
-          // room.players.push({ socketId: socket.id, username, score: 0, isHost: false, joinedAt: new Date(), connected: true });
-          // console.log(`requestRoomInfo: added ${username} to players for ${roomId}`);
         }
-        // emit an update so everyone sees the reconnect
         io.to(roomId).emit("updatePlayers", publicPlayers(room));
-        // persist change
-        await saveRoomToDB(room);
+        await saveRoomToDB(room, true);
       }
 
       const isRiddler =
@@ -258,15 +267,8 @@ export default function gameSocket(io) {
         round: room.currentRound,
       });
 
-      // Emit stored chat messages to this socket
       (room.chats || []).forEach((msg) => {
-        socket.emit("message", {
-          id: msg.id,
-          player: msg.player,
-          text: msg.text,
-          isSystem: msg.isSystem,
-          timestamp: msg.timestamp,
-        });
+        socket.emit("message", msg);
       });
     });
 
@@ -284,9 +286,7 @@ export default function gameSocket(io) {
       };
 
       room.chats.push(msg);
-
       io.to(roomId).emit("message", msg);
-
       await saveRoomToDB(room);
     });
 
@@ -315,7 +315,6 @@ export default function gameSocket(io) {
         }
 
         io.to(roomId).emit("winner", { username, word: room.currentWord });
-
         room.chats.push({
           id: Date.now().toString(),
           player: "System",
@@ -372,16 +371,7 @@ export default function gameSocket(io) {
           });
 
           io.to(roomId).emit("updatePlayers", publicPlayers(room));
-
-          io.to(roomId).emit("message", {
-            id: Date.now().toString(),
-            player: "System",
-            text: `Round ${room.currentRound} started — ${nextRiddler.username} is the riddler!`,
-            isSystem: true,
-            timestamp: Date.now(),
-          });
-
-          await saveRoomToDB(room);
+          await saveRoomToDB(room, true);
         }, 2500);
       } else {
         room.chats.push({
@@ -419,7 +409,6 @@ export default function gameSocket(io) {
           player.connected = false;
           console.log(`${player.username} disconnected from room ${roomId}`);
 
-          // Schedule removal after 30 seconds unless reconnected
           setTimeout(async () => {
             if (!player.connected) {
               const leftIndex = room.players.findIndex(
@@ -438,7 +427,6 @@ export default function gameSocket(io) {
                 });
 
                 io.to(roomId).emit("updatePlayers", publicPlayers(room));
-
                 io.to(roomId).emit("message", {
                   id: Date.now().toString(),
                   player: "System",
@@ -447,12 +435,12 @@ export default function gameSocket(io) {
                   timestamp: Date.now(),
                 });
 
-                await saveRoomToDB(room);
+                await saveRoomToDB(room, true);
               }
             }
-          }, 30000); // 30-second grace period for reconnect
+          }, 30000);
 
-          await saveRoomToDB(room);
+          await saveRoomToDB(room, true);
           break;
         }
       }
