@@ -145,63 +145,65 @@ export default function gameSocket(io) {
     // 🧍 JOIN ROOM
     socket.on("joinRoom", async ({ roomId, username } = {}, callback) => {
       try {
-        let room = getRoom(roomId);
-
-        // 🔁 If not in memory, recover from DB
-        if (!room) {
-          room = await loadRoomFromDB(roomId);
-          if (!room)
+        // Ensure room is loaded into memory
+        if (!rooms[roomId]) {
+          await loadRoomFromDB(roomId);
+          if (!rooms[roomId])
             return callback?.({ success: false, message: "Room not found" });
         }
 
-        const existingPlayer = room.players.find(
-          (p) => p.username === username
-        );
+        const room = rooms[roomId]; // always use the in-memory reference
+
+        if (!Array.isArray(room.players)) room.players = [];
+
+        // find existing player by username
+        let existingPlayer = room.players.find((p) => p.username === username);
 
         if (!existingPlayer) {
-          room.players.push({
+          const newPlayer = {
             socketId: socket.id,
             username,
             score: 0,
             isHost: false,
             joinedAt: new Date(),
             connected: true,
-          });
+          };
+          room.players.push(newPlayer);
+          console.log(
+            `✅ Added player ${username} to room ${roomId} — players: ${room.players.length}`
+          );
         } else {
+          // reconnect case: update socketId and mark connected
           existingPlayer.socketId = socket.id;
           existingPlayer.connected = true;
+          console.log(`🔁 Player ${username} reconnected to room ${roomId}`);
         }
 
+        // make socket join the room channel so broadcasts reach this socket
         socket.join(roomId);
-        console.log(`${username} joined room ${roomId}`);
 
-        await saveRoomToDB(room);
-
-        // Send room info and existing chat messages
-        const isRiddler =
-          room.rounds[room.currentRound - 1].riddler === username;
+        // Emit full room info to the joining socket (so their UI becomes correct immediately)
         socket.emit("roomInfo", {
           roomId,
-          role: isRiddler ? "riddler" : "player",
-          word: isRiddler ? room.currentWord : null,
-          wordLength: room.currentWord.length,
+          role:
+            room.rounds?.[room.currentRound - 1]?.riddler === username
+              ? "riddler"
+              : "player",
+          word:
+            room.rounds?.[room.currentRound - 1]?.riddler === username
+              ? room.currentWord
+              : null,
+          wordLength: room.currentWord ? room.currentWord.length : 0,
           players: publicPlayers(room),
           round: room.currentRound,
-          riddler: room.rounds[room.currentRound - 1].riddler,
+          riddler: room.rounds?.[room.currentRound - 1]?.riddler || room.host,
         });
 
-        // Emit stored chat messages to the joining player
-        room.chats.forEach((msg) => {
-          socket.emit("message", {
-            id: msg.id,
-            player: msg.player,
-            text: msg.text,
-            isSystem: msg.isSystem,
-            timestamp: msg.timestamp,
-          });
-        });
-
+        // Broadcast updated players list to everyone in the room
         io.to(roomId).emit("updatePlayers", publicPlayers(room));
+
+        // Save the up-to-date in-memory room to DB (debounced inside saveRoomToDB)
+        await saveRoomToDB(room);
 
         callback?.({ success: true });
       } catch (err) {
@@ -212,22 +214,52 @@ export default function gameSocket(io) {
 
     // 🪄 REQUEST ROOM INFO
     socket.on("requestRoomInfo", async ({ roomId, username }) => {
-      let room = rooms[roomId] || (await loadRoomFromDB(roomId));
+      // ensure the in-memory room exists
+      if (!rooms[roomId]) {
+        await loadRoomFromDB(roomId);
+      }
+      const room = rooms[roomId];
       if (!room) return;
 
-      const isRiddler = room.rounds[room.currentRound - 1].riddler === username;
+      // put the socket back into the socket.io room (important after reloads)
+      socket.join(roomId);
+
+      // If the user already exists in players, update their socketId & connected status
+      if (username) {
+        if (!Array.isArray(room.players)) room.players = [];
+        const existing = room.players.find((p) => p.username === username);
+        if (existing) {
+          existing.socketId = socket.id;
+          existing.connected = true;
+          console.log(
+            `requestRoomInfo: marked ${username} connected for ${roomId}`
+          );
+        } else {
+          // Optional: if someone wants requestRoomInfo to also add them if not present,
+          // uncomment the block below. For now we don't auto-add to avoid accidental adds.
+          // room.players.push({ socketId: socket.id, username, score: 0, isHost: false, joinedAt: new Date(), connected: true });
+          // console.log(`requestRoomInfo: added ${username} to players for ${roomId}`);
+        }
+        // emit an update so everyone sees the reconnect
+        io.to(roomId).emit("updatePlayers", publicPlayers(room));
+        // persist change
+        await saveRoomToDB(room);
+      }
+
+      const isRiddler =
+        room.rounds[room.currentRound - 1]?.riddler === username;
       socket.emit("roomInfo", {
         roomId,
         role: isRiddler ? "riddler" : "guesser",
         word: isRiddler ? room.currentWord : null,
-        wordLength: room.currentWord.length,
+        wordLength: room.currentWord ? room.currentWord.length : 0,
         players: publicPlayers(room),
-        riddler: room.rounds[room.currentRound - 1].riddler,
+        riddler: room.rounds[room.currentRound - 1]?.riddler,
         round: room.currentRound,
       });
 
-      // Emit stored chat messages
-      room.chats.forEach((msg) => {
+      // Emit stored chat messages to this socket
+      (room.chats || []).forEach((msg) => {
         socket.emit("message", {
           id: msg.id,
           player: msg.player,
