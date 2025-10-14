@@ -7,12 +7,13 @@ import {
 } from "./helpers.js";
 
 export const setupRoomSocket = (io, socket, rooms, saveTimeouts) => {
-  socket.on("createRoom", async ({ roomId, username }, callback) => {
+  socket.on("createRoom", async ({ roomId, username, mode }, callback) => {
     try {
       const word = generate({ minLength: 4, maxLength: 10 });
       rooms[roomId] = {
         roomId,
         host: username,
+        mode: mode || "private",
         currentWord: word,
         currentRound: 1,
         players: [
