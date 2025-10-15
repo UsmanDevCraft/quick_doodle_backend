@@ -16,6 +16,7 @@ export const saveRoomToDB = async (room, saveTimeouts, immediate = false) => {
   const dbRoom = {
     roomId: room.roomId,
     host: room.host,
+    mode: room.mode,
     currentWord: room.currentWord,
     currentRound: room.currentRound,
     players: room.players.map((p) => ({
@@ -66,6 +67,7 @@ export const loadRoomFromDB = async (rooms, roomId) => {
     rooms[roomId] = {
       roomId: room.roomId,
       host: room.host,
+      mode: room.mode || "private",
       currentWord:
         room.currentWord || generate({ minLength: 4, maxLength: 10 }),
       currentRound: room.currentRound || 1,
