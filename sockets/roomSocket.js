@@ -158,4 +158,31 @@ export const setupRoomSocket = (io, socket, rooms, saveTimeouts) => {
       socket.emit("message", msg);
     });
   });
+
+  socket.on("checkRoom", async (roomId, callback) => {
+    try {
+      let room = rooms[roomId];
+
+      if (!room) {
+        await loadRoomFromDB(rooms, roomId);
+        room = rooms[roomId];
+      }
+
+      if (!room) {
+        return callback?.({ exists: false, message: "Room not found" });
+      }
+
+      if (!room.isActive) {
+        return callback?.({
+          exists: false,
+          message: "Room is no longer active",
+        });
+      }
+
+      callback?.({ exists: true, message: "Room is available" });
+    } catch (err) {
+      console.error("checkRoom error:", err);
+      callback?.({ exists: false, message: "Server error" });
+    }
+  });
 };
