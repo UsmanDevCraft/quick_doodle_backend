@@ -6,44 +6,75 @@ export const setupDisconnectSocket = (io, socket, rooms, saveTimeouts) => {
 
     for (const [roomId, room] of Object.entries(rooms)) {
       const player = room.players.find((p) => p.socketId === socket.id);
-      if (player) {
-        player.connected = false;
-        console.log(`${player.username} disconnected from room ${roomId}`);
+      if (!player) continue;
 
-        setTimeout(async () => {
-          if (!player.connected) {
-            const leftIndex = room.players.findIndex(
-              (p) => p.socketId === socket.id
-            );
-            if (leftIndex !== -1) {
-              const [left] = room.players.splice(leftIndex, 1);
-              console.log(`${left.username} permanently left room ${roomId}`);
+      player.connected = false;
+      console.log(`${player.username} disconnected from room ${roomId}`);
 
-              room.chats.push({
-                id: Date.now().toString(),
-                player: "System",
-                text: `${left.username} left the room.`,
-                isSystem: true,
-                timestamp: new Date(),
-              });
+      // Allow 30s grace for reconnection before removing player
+      setTimeout(async () => {
+        // still disconnected?
+        if (!player.connected) {
+          const leftIndex = room.players.findIndex(
+            (p) => p.socketId === socket.id
+          );
+          if (leftIndex === -1) return;
 
-              io.to(roomId).emit("updatePlayers", publicPlayers(room));
-              io.to(roomId).emit("message", {
-                id: Date.now().toString(),
-                player: "System",
-                text: `${left.username} left the room.`,
-                isSystem: true,
-                timestamp: Date.now(),
-              });
+          const [left] = room.players.splice(leftIndex, 1);
+          console.log(`${left.username} permanently left room ${roomId}`);
 
-              await saveRoomToDB(room, saveTimeouts, true);
+          let systemMessage = `${left.username} left the room.`;
+
+          // 🧩 Handle host reassignment
+          if (left.isHost) {
+            if (room.players.length > 0) {
+              // promote next available player
+              room.players[0].isHost = true;
+              room.host = room.players[0].username;
+              systemMessage += ` ${room.host} is now the host.`;
+              console.log(`👑 New host in ${roomId}: ${room.host}`);
+            } else {
+              // no players left
+              room.isActive = false;
+              systemMessage += ` The room is now inactive.`;
+              console.log(
+                `☠️ Room ${roomId} is now inactive (no players left).`
+              );
             }
           }
-        }, 30000);
 
-        await saveRoomToDB(room, saveTimeouts, true);
-        break;
-      }
+          // 🕸 Handle riddler reassignment if host was also riddler
+          const currentRound = room.rounds[room.currentRound - 1];
+          if (currentRound && currentRound.riddler === left.username) {
+            if (room.players.length > 0) {
+              currentRound.riddler = room.players[0].username;
+              room.currentWord = "newword"; // optionally regenerate or keep old
+              systemMessage += ` ${currentRound.riddler} is now the riddler.`;
+              console.log(`🎭 Riddler reassigned to ${currentRound.riddler}`);
+            } else {
+              console.log(`🎭 No riddler assigned, room empty.`);
+            }
+          }
+
+          // 🧠 Update chats and emit system message
+          const msg = {
+            id: Date.now().toString(),
+            player: "System",
+            text: systemMessage,
+            isSystem: true,
+            timestamp: new Date(),
+          };
+
+          room.chats.push(msg);
+          io.to(roomId).emit("updatePlayers", publicPlayers(room));
+          io.to(roomId).emit("message", msg);
+
+          await saveRoomToDB(room, saveTimeouts, true);
+        }
+      }, 30000);
+
+      await saveRoomToDB(room, saveTimeouts, true);
+      break;
     }
   });
 };
