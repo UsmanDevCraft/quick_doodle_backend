@@ -5,6 +5,7 @@ import {
   saveRoomToDB,
   loadRoomFromDB,
 } from "./helpers.js";
+import Room from "../models/Room.js";
 
 export const setupRoomSocket = (io, socket, rooms, saveTimeouts) => {
   socket.on("createRoom", async ({ roomId, username, mode }, callback) => {
@@ -183,6 +184,124 @@ export const setupRoomSocket = (io, socket, rooms, saveTimeouts) => {
     } catch (err) {
       console.error("checkRoom error:", err);
       callback?.({ exists: false, message: "Server error" });
+    }
+  });
+
+  socket.on("joinGlobalRoom", async ({ username }, callback) => {
+    try {
+      console.log(
+        `[joinGlobalRoom] request by ${username} - memory rooms: ${
+          Object.keys(rooms).length
+        }`
+      );
+
+      // 1️⃣ Try to find any active global room in memory
+      let globalRoom = Object.values(rooms).find(
+        (r) => r.mode === "global" && r.isActive
+      );
+
+      if (globalRoom) {
+        console.log(
+          `[joinGlobalRoom] found active global room in memory: ${globalRoom.roomId}`
+        );
+      } else {
+        console.log(
+          "[joinGlobalRoom] no active global room in memory, checking DB..."
+        );
+        // 2️⃣ If not in memory, try to load from DB
+        // Use lean() to get a plain object; sort to get latest if needed
+        const dbRoom = await Room.findOne({ mode: "global", isActive: true })
+          .lean()
+          .exec();
+        if (dbRoom) {
+          console.log(
+            `[joinGlobalRoom] found dbRoom: ${dbRoom.roomId}, loading into memory...`
+          );
+          await loadRoomFromDB(rooms, dbRoom.roomId);
+          globalRoom = rooms[dbRoom.roomId];
+          if (globalRoom) {
+            console.log(
+              `[joinGlobalRoom] restored global room into memory: ${dbRoom.roomId}`
+            );
+          } else {
+            console.warn(
+              `[joinGlobalRoom] loadRoomFromDB didn't populate rooms[${dbRoom.roomId}]`
+            );
+          }
+        } else {
+          console.log("[joinGlobalRoom] no active global room found in DB");
+        }
+      }
+
+      // 3️⃣ If still none, return failure (frontend shows modal)
+      if (!globalRoom) {
+        return callback?.({
+          success: false,
+          message: "No active global rooms available right now.",
+        });
+      }
+
+      // Defensive check
+      const roomId = globalRoom.roomId;
+      const room = getRoom(rooms, roomId);
+      if (!room) {
+        console.error(
+          `[joinGlobalRoom] inconsistent state: rooms[${roomId}] missing after restore`
+        );
+        return callback?.({
+          success: false,
+          message: "Server error: room restore failed.",
+        });
+      }
+
+      // 4️⃣ Join the found global room (reuse joinRoom logic)
+      if (!Array.isArray(room.players)) room.players = [];
+
+      let player = room.players.find((p) => p.username === username);
+      if (!player) {
+        player = {
+          socketId: socket.id,
+          username,
+          score: 0,
+          isHost: false,
+          joinedAt: new Date(),
+          connected: true,
+        };
+        room.players.push(player);
+      } else {
+        player.socketId = socket.id;
+        player.connected = true;
+      }
+
+      socket.join(roomId);
+
+      // Emit roomInfo and updatePlayers (same payload shape as joinRoom)
+      socket.emit("roomInfo", {
+        roomId,
+        role:
+          room.rounds?.[room.currentRound - 1]?.riddler === username
+            ? "riddler"
+            : "player",
+        word:
+          room.rounds?.[room.currentRound - 1]?.riddler === username
+            ? room.currentWord
+            : null,
+        wordLength: room.currentWord ? room.currentWord.length : 0,
+        players: publicPlayers(room),
+        round: room.currentRound,
+        riddler: room.rounds?.[room.currentRound - 1]?.riddler || room.host,
+      });
+
+      io.to(roomId).emit("updatePlayers", publicPlayers(room));
+      await saveRoomToDB(room, saveTimeouts, true);
+      callback?.({ success: true, roomId });
+    } catch (err) {
+      console.error("joinGlobalRoom error:", err);
+      try {
+        callback?.({ success: false, message: "Server error" });
+      } catch (e) {
+        console.error("joinGlobalRoom callback failed:", e);
+      }
     }
   });
 };
