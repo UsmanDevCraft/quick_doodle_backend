@@ -189,72 +189,47 @@ export const setupRoomSocket = (io, socket, rooms, saveTimeouts) => {
 
   socket.on("joinGlobalRoom", async ({ username }, callback) => {
     try {
-      console.log(
-        `[joinGlobalRoom] request by ${username} - memory rooms: ${
-          Object.keys(rooms).length
-        }`
-      );
+      console.log(`[joinGlobalRoom] Request by ${username}`);
 
-      // 1️⃣ Try to find any active global room in memory
-      let globalRoom = Object.values(rooms).find(
-        (r) => r.mode === "global" && r.isActive
-      );
+      const MAX_PLAYERS = 3;
 
-      if (globalRoom) {
-        console.log(
-          `[joinGlobalRoom] found active global room in memory: ${globalRoom.roomId}`
-        );
-      } else {
-        console.log(
-          "[joinGlobalRoom] no active global room in memory, checking DB..."
-        );
-        // 2️⃣ If not in memory, try to load from DB
-        // Use lean() to get a plain object; sort to get latest if needed
-        const dbRoom = await Room.findOne({ mode: "global", isActive: true })
-          .lean()
-          .exec();
-        if (dbRoom) {
-          console.log(
-            `[joinGlobalRoom] found dbRoom: ${dbRoom.roomId}, loading into memory...`
-          );
-          await loadRoomFromDB(rooms, dbRoom.roomId);
-          globalRoom = rooms[dbRoom.roomId];
-          if (globalRoom) {
-            console.log(
-              `[joinGlobalRoom] restored global room into memory: ${dbRoom.roomId}`
-            );
-          } else {
-            console.warn(
-              `[joinGlobalRoom] loadRoomFromDB didn't populate rooms[${dbRoom.roomId}]`
-            );
-          }
-        } else {
-          console.log("[joinGlobalRoom] no active global room found in DB");
-        }
-      }
+      // 1️⃣ Step 1: Find available global room directly in DB
+      const dbRoom = await Room.findOne({
+        mode: "global",
+        isActive: true,
+        $where: `this.players.length < ${MAX_PLAYERS}`,
+      })
+        .sort({ updatedAt: 1 }) // pick oldest active one first (to fill evenly)
+        .lean();
 
-      // 3️⃣ If still none, return failure (frontend shows modal)
-      if (!globalRoom) {
+      let roomId, room;
+
+      if (!dbRoom) {
+        // 2️⃣ No available room found → optionally create one
+        console.log("⚠️ No global room with space found in DB");
+
+        // If you want to auto-create a new one instead of rejecting:
+        // const newRoom = await createNewGlobalRoom();
+        // roomId = newRoom.roomId;
+        // rooms[roomId] = newRoom;
+        // room = newRoom;
+
         return callback?.({
           success: false,
-          message: "No active global rooms available right now.",
+          message:
+            "All global rooms are full or inactive. Please try again soon!",
         });
       }
 
-      // Defensive check
-      const roomId = globalRoom.roomId;
-      const room = getRoom(rooms, roomId);
+      // 3️⃣ Check if room already in memory (load it)
+      roomId = dbRoom.roomId;
+      room = rooms[roomId];
       if (!room) {
-        console.error(
-          `[joinGlobalRoom] inconsistent state: rooms[${roomId}] missing after restore`
-        );
-        return callback?.({
-          success: false,
-          message: "Server error: room restore failed.",
-        });
+        await loadRoomFromDB(rooms, roomId);
+        room = rooms[roomId];
       }
 
-      // 4️⃣ Join the found global room (reuse joinRoom logic)
+      // 4️⃣ Join logic
       if (!Array.isArray(room.players)) room.players = [];
 
       let player = room.players.find((p) => p.username === username);
@@ -268,14 +243,16 @@ export const setupRoomSocket = (io, socket, rooms, saveTimeouts) => {
           connected: true,
         };
         room.players.push(player);
+        console.log(`🌍 ${username} joined global room ${roomId}`);
       } else {
         player.socketId = socket.id;
         player.connected = true;
+        console.log(`🔁 ${username} reconnected to global room ${roomId}`);
       }
 
       socket.join(roomId);
 
-      // Emit roomInfo and updatePlayers (same payload shape as joinRoom)
+      // 5️⃣ Notify and sync
       socket.emit("roomInfo", {
         roomId,
         role:
@@ -293,15 +270,14 @@ export const setupRoomSocket = (io, socket, rooms, saveTimeouts) => {
       });
 
       io.to(roomId).emit("updatePlayers", publicPlayers(room));
+
+      // 6️⃣ Persist back to DB
       await saveRoomToDB(room, saveTimeouts, true);
+
       callback?.({ success: true, roomId });
     } catch (err) {
       console.error("joinGlobalRoom error:", err);
-      try {
-        callback?.({ success: false, message: "Server error" });
-      } catch (e) {
-        console.error("joinGlobalRoom callback failed:", e);
-      }
+      callback?.({ success: false, message: "Server error" });
     }
   });
 };
