@@ -41,7 +41,21 @@ const RoomSchema = new mongoose.Schema({
   currentRound: { type: Number, default: 1 },
   players: [PlayerSchema],
   rounds: [RoundSchema],
-  chats: [ChatSchema], // New field to store chat messages
+  chats: [ChatSchema],
+
+  // 🆕 Kick system
+  kickVotes: {
+    type: Map,
+    of: [String],
+    default: {},
+  },
+
+  // 🆕 Ban list
+  banned: {
+    type: [String],
+    default: [],
+  },
+
   isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now },
 });
