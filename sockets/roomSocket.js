@@ -65,6 +65,7 @@ export const setupRoomSocket = (io, socket, rooms, saveTimeouts) => {
 
   socket.on("joinRoom", async ({ roomId, username } = {}, callback) => {
     try {
+      // 🏠 Load room if not already in memory
       if (!rooms[roomId]) {
         await loadRoomFromDB(rooms, roomId);
         if (!rooms[roomId])
@@ -74,6 +75,19 @@ export const setupRoomSocket = (io, socket, rooms, saveTimeouts) => {
       const room = getRoom(rooms, roomId);
       if (!Array.isArray(room.players)) room.players = [];
 
+      // 🛡️ Convert banned array (from DB) to Set for fast lookup (once per load)
+      if (Array.isArray(room.banned)) room.banned = new Set(room.banned);
+
+      // 🚫 Check if player is banned
+      if (room.banned.has(username)) {
+        console.log(`🚫 ${username} tried to join banned room ${roomId}`);
+        return callback?.({
+          success: false,
+          message: "You are banned from this room.",
+        });
+      }
+
+      // ✅ Add or reconnect player
       let existingPlayer = room.players.find((p) => p.username === username);
 
       if (!existingPlayer) {
@@ -95,6 +109,7 @@ export const setupRoomSocket = (io, socket, rooms, saveTimeouts) => {
         console.log(`🔁 Player ${username} reconnected to room ${roomId}`);
       }
 
+      // 👇 join room and send initial data
       socket.join(roomId);
 
       socket.emit("roomInfo", {
@@ -114,6 +129,9 @@ export const setupRoomSocket = (io, socket, rooms, saveTimeouts) => {
       });
 
       io.to(roomId).emit("updatePlayers", publicPlayers(room));
+
+      // 🧠 Save room (convert banned set back to array for DB)
+      room.banned = Array.from(room.banned);
       await saveRoomToDB(room, saveTimeouts, true);
 
       callback?.({ success: true });
@@ -370,6 +388,9 @@ export const setupRoomSocket = (io, socket, rooms, saveTimeouts) => {
           success: false,
           message: "Not enough players to vote kick",
         });
+
+      if (!room.kickVotes) room.kickVotes = {};
+      if (!room.banned) room.banned = new Set();
 
       // Initialize if not present
       if (!room.kickVotes[target]) room.kickVotes[target] = new Set();
