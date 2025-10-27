@@ -78,6 +78,10 @@ export const setupRoomSocket = (io, socket, rooms, saveTimeouts) => {
       // 🛡️ Convert banned array (from DB) to Set for fast lookup (once per load)
       if (Array.isArray(room.banned)) room.banned = new Set(room.banned);
 
+      // 🛡️ Convert banned array (from DB) to Set for fast lookup (once per load)
+      if (!room.banned) room.banned = new Set();
+      else if (Array.isArray(room.banned)) room.banned = new Set(room.banned);
+
       // 🚫 Check if player is banned
       if (room.banned.has(username)) {
         console.log(`🚫 ${username} tried to join banned room ${roomId}`);
