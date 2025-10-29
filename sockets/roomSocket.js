@@ -182,10 +182,9 @@ export const setupRoomSocket = (io, socket, rooms, saveTimeouts) => {
     });
   });
 
-  socket.on("checkRoom", async (roomId, callback) => {
+  socket.on("checkRoom", async ({ roomId, username }, callback) => {
     try {
       let room = rooms[roomId];
-
       if (!room) {
         await loadRoomFromDB(rooms, roomId);
         room = rooms[roomId];
@@ -194,11 +193,22 @@ export const setupRoomSocket = (io, socket, rooms, saveTimeouts) => {
       if (!room) {
         return callback?.({ exists: false, message: "Room not found" });
       }
-
       if (!room.isActive) {
         return callback?.({
           exists: false,
           message: "Room is no longer active",
+        });
+      }
+
+      const userExists = room.players?.some(
+        (p) => p.username.toLowerCase() === username.toLowerCase()
+      );
+
+      if (userExists) {
+        return callback?.({
+          exists: true,
+          isUsernameExists: true,
+          message: "Username already taken in this room",
         });
       }
 
