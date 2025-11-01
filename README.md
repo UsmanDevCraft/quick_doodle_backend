@@ -125,11 +125,11 @@ const socket = io("http://localhost:3000");
 
 ---
 
-🛠️ Planned for future releases
+🛠️ Planned for Future Releases
 
-> Authentication system — users can sign in and have personalized experience
-> Game history per user — track room history, wins, streaks, and stats
-> AI bot opponent — play even when no players are available
+> - Authentication system — users can sign in and have personalized experience
+> - Game history per user — track room history, wins, streaks, and stats
+> - AI bot opponent — play even when no players are available
 
 ---
 
