@@ -4,6 +4,6 @@ import { showDrawBox } from "./gameEvents/showDrawBox.js";
 
 export const setupGameEventsSocket = (io, socket, rooms, saveTimeouts) => {
   guessWordEvent(io, socket, rooms, saveTimeouts);
-  drawingEvent(io, socket, rooms, saveTimeouts);
+  drawingEvent(socket);
   showDrawBox(socket);
 };

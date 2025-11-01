@@ -1,5 +1,6 @@
-export const drawingEvent = (io, socket, rooms, saveTimeouts) => {
-  socket.on("drawing", ({ roomId, data } = {}) => {
-    socket.to(roomId).emit("drawing", data);
+export const drawingEvent = (socket) => {
+  socket.on("drawing", (stroke) => {
+    const { roomId, ...rest } = stroke;
+    socket.to(roomId).emit("drawing", rest);
   });
 };
