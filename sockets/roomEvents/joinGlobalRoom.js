@@ -6,7 +6,7 @@ export const joinGlobalRoomEvent = (io, socket, rooms, saveTimeouts) => {
     try {
       console.log(`[joinGlobalRoom] Request by ${username}`);
 
-      const MAX_PLAYERS = 3;
+      const MAX_PLAYERS = 12;
 
       // 1️⃣ Step 1: Find available global room directly in DB
       const dbRoom = await Room.findOne({
@@ -22,12 +22,6 @@ export const joinGlobalRoomEvent = (io, socket, rooms, saveTimeouts) => {
       if (!dbRoom) {
         // 2️⃣ No available room found → optionally create one
         console.log("⚠️ No global room with space found in DB");
-
-        // If you want to auto-create a new one instead of rejecting:
-        // const newRoom = await createNewGlobalRoom();
-        // roomId = newRoom.roomId;
-        // rooms[roomId] = newRoom;
-        // room = newRoom;
 
         return callback?.({
           success: false,
