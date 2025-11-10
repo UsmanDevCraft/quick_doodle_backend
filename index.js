@@ -10,15 +10,21 @@ dotenv.config();
 connectDB();
 
 const app = express();
-app.use(cors());
+app.use(
+  cors({
+    origin: ["https://quick-doodle.vercel.app", "http://localhost:3001"],
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: ["https://quick-doodle.vercel.app", "http://localhost:3001"],
     methods: ["GET", "POST"],
+    credentials: true,
   },
 });
 
