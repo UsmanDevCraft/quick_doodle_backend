@@ -13,18 +13,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// HTTP server wrapper (needed for sockets)
 const server = http.createServer(app);
 
-// Attach socket.io
 const io = new Server(server, {
   cors: {
-    origin: "*", // later restrict to your frontend URL
+    origin: "*",
     methods: ["GET", "POST"],
   },
 });
 
-// Use socket handlers
 gameSocket(io);
 
 app.get("/", (req, res) => {
