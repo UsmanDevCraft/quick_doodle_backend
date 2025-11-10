@@ -25,7 +25,7 @@ const io = new Server(server, {
 gameSocket(io);
 
 app.get("/", (req, res) => {
-  res.send("QuickDoodle Backend is running...");
+  res.send("QuickDoodle Backend is running... 🙂");
 });
 
 const PORT = process.env.PORT || 3000;
