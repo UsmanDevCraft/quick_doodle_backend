@@ -1,5 +1,5 @@
 import { generate } from "random-words";
-import { publicPlayers, saveRoomToDB } from "../helpers.js";
+import { publicPlayers, saveRoomToDB } from "../../helpers.js";
 
 export const createRoomCore = async ({
   socketId = null,

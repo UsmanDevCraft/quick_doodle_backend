@@ -1,4 +1,4 @@
-import { createRoomCore } from "../sockets/roomEvents/createRoom.service.js";
+import { createRoomCore } from "../sockets/roomEvents/services/createRoom.service.js";
 import { rooms, saveTimeouts } from "../sockets/roomStore.js";
 
 export const createRoom = async (req, res) => {
