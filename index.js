@@ -6,17 +6,23 @@ import connectDB from "./config/database.js";
 import dotenv from "dotenv";
 
 import gameSocket from "./sockets/gameSocket.js";
+import roomRoutes from "./routes/room.routes.js";
+
 dotenv.config();
 connectDB();
 
 const app = express();
+
 app.use(
   cors({
     origin: ["https://quick-doodle.vercel.app", "http://localhost:3001"],
     credentials: true,
   })
 );
+
 app.use(express.json());
+
+app.use("/api", roomRoutes);
 
 const server = http.createServer(app);
 

@@ -2,9 +2,7 @@ import { setupRoomSocket } from "./roomSocket.js";
 import { setupChatSocket } from "./chatSocket.js";
 import { setupGameEventsSocket } from "./gameEventsSocket.js";
 import { setupDisconnectSocket } from "./disconnectSocket.js";
-
-let rooms = {};
-const saveTimeouts = {};
+import { rooms, saveTimeouts } from "./roomStore.js";
 
 export default function gameSocket(io) {
   io.on("connection", (socket) => {
