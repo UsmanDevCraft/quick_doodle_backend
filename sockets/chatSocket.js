@@ -11,6 +11,14 @@ export const setupChatSocket = (io, socket, rooms, saveTimeouts) => {
     const room = getRoom(rooms, roomId);
     if (!room) return;
 
+    if (room.mode === "ai" && !room.ai) {
+      room.ai = {
+        name: "Riddler AI 🤖",
+        lastMessageAt: null,
+        hasGreeted: false,
+      };
+    }
+
     const msg = {
       id: Date.now().toString(),
       player: username,
@@ -30,6 +38,7 @@ export const setupChatSocket = (io, socket, rooms, saveTimeouts) => {
     if (username === room.ai?.name) return;
 
     // 1️⃣ AI GREETING (ONCE)
+    if (!room.ai || room.mode !== "ai") return;
     if (!room.ai.hasGreeted) {
       room.ai.hasGreeted = true;
 
@@ -56,18 +65,22 @@ export const setupChatSocket = (io, socket, rooms, saveTimeouts) => {
       emitAiTyping(io, roomId);
 
       setTimeout(async () => {
-        const aiText = await generateAiTaunt(room.currentWord, guess);
+        try {
+          const aiText = await generateAiTaunt(room.currentWord, text);
 
-        const aiMsg = {
-          id: Date.now().toString(),
-          player: room.ai.name,
-          text: aiText,
-          isSystem: false,
-          timestamp: new Date(),
-        };
+          const aiMsg = {
+            id: Date.now().toString(),
+            player: room.ai.name,
+            text: aiText,
+            isSystem: false,
+            timestamp: new Date(),
+          };
 
-        room.chats.push(aiMsg);
-        io.to(roomId).emit("message", aiMsg);
+          room.chats.push(aiMsg);
+          io.to(roomId).emit("message", aiMsg);
+        } catch (err) {
+          console.error("AI chat error:", err);
+        }
       }, getAiDelay(room));
     }
   });
