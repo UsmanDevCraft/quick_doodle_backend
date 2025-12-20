@@ -1,5 +1,12 @@
 import { generate } from "random-words";
-import { getRoom, publicPlayers, saveRoomToDB } from "../helpers.js";
+import {
+  getRoom,
+  publicPlayers,
+  saveRoomToDB,
+  getAiDelay,
+  emitAiTyping,
+} from "../helpers.js";
+import { aiRiddlerReply } from "../../src/ai/riddler.js";
 
 export const guessWordEvent = (io, socket, rooms, saveTimeouts) => {
   socket.on("guessWord", async ({ roomId, username, guess } = {}) => {
@@ -84,6 +91,18 @@ export const guessWordEvent = (io, socket, rooms, saveTimeouts) => {
         io.to(roomId).emit("updatePlayers", publicPlayers(room));
         await saveRoomToDB(room, saveTimeouts, true);
       }, 2500);
+
+      if (isCorrect && room.mode === "ai") {
+        const aiText = await aiRiddlerReply(room.currentWord, guess);
+
+        io.to(roomId).emit("message", {
+          id: Date.now().toString(),
+          player: room.ai.name,
+          text: aiText,
+          isSystem: false,
+          timestamp: new Date(),
+        });
+      }
     } else {
       room.chats.push({
         id: Date.now().toString(),
@@ -100,6 +119,25 @@ export const guessWordEvent = (io, socket, rooms, saveTimeouts) => {
         isSystem: false,
         timestamp: Date.now(),
       });
+
+      if (room.mode === "ai") {
+        emitAiTyping(io, roomId);
+
+        setTimeout(async () => {
+          const aiText = await aiRiddlerReply(room.currentWord, guess);
+
+          const aiMsg = {
+            id: Date.now().toString(),
+            player: room.ai.name,
+            text: aiText,
+            isSystem: false,
+            timestamp: new Date(),
+          };
+
+          room.chats.push(aiMsg);
+          io.to(roomId).emit("message", aiMsg);
+        }, getAiDelay(room));
+      }
     }
 
     await saveRoomToDB(room, saveTimeouts);

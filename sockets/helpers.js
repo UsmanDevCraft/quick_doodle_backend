@@ -96,3 +96,18 @@ export const loadRoomFromDB = async (rooms, roomId) => {
   }
   return rooms[roomId];
 };
+
+export function getAiDelay(room) {
+  const now = Date.now();
+  const last = room.ai.lastMessageAt || 0;
+  room.ai.lastMessageAt = now;
+
+  return now - last < 2000 ? 600 : 1200;
+}
+
+export function emitAiTyping(io, roomId) {
+  io.to(roomId).emit("aiTyping", true);
+  setTimeout(() => {
+    io.to(roomId).emit("aiTyping", false);
+  }, 1200);
+}

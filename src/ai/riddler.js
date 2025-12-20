@@ -32,5 +32,3 @@ export async function aiRiddlerReply(word, guess) {
   const res = await chain.invoke({ word, guess });
   return res.content;
 }
-
-aiRiddlerReply("elephant", "giraffe").then(console.log);
