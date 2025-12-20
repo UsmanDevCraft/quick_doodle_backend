@@ -100,6 +100,25 @@ export const guessWordEvent = (io, socket, rooms, saveTimeouts) => {
         isSystem: false,
         timestamp: Date.now(),
       });
+
+      if (room.mode === "ai") {
+        emitAiTyping(io, roomId);
+
+        setTimeout(async () => {
+          const aiText = await generateAiTaunt(room.currentWord, guess);
+
+          const aiMsg = {
+            id: Date.now().toString(),
+            player: room.ai.name,
+            text: aiText,
+            isSystem: false,
+            timestamp: new Date(),
+          };
+
+          room.chats.push(aiMsg);
+          io.to(roomId).emit("message", aiMsg);
+        }, getAiDelay(room));
+      }
     }
 
     await saveRoomToDB(room, saveTimeouts);

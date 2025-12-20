@@ -53,6 +53,12 @@ export const createRoomCore = async ({
       connected: true,
     });
 
+    rooms[roomId].ai = {
+      name: "Riddler AI 🤖",
+      lastMessageAt: null,
+      hasGreeted: false,
+    };
+
     // rooms[roomId].rounds[0].riddler = "Riddler AI 🤖";
   }
 
