@@ -46,20 +46,24 @@ export const setupChatSocket = (io, socket, rooms, saveTimeouts) => {
     }
 
     // 2️⃣ AI NORMAL CHAT REACTION
-    emitAiTyping(io, roomId);
+    if (room.mode === "ai" && room.ai) {
+      emitAiTyping(io, roomId);
 
-    setTimeout(() => {
-      const aiMsg = {
-        id: Date.now().toString(),
-        player: room.ai.name,
-        text: "👀 Interesting… but words matter more than talk.",
-        isSystem: false,
-        timestamp: new Date(),
-      };
+      setTimeout(async () => {
+        const aiText = await generateAiTaunt(room.currentWord, guess);
 
-      room.chats.push(aiMsg);
-      io.to(roomId).emit("message", aiMsg);
-    }, getAiDelay(room));
+        const aiMsg = {
+          id: Date.now().toString(),
+          player: room.ai.name,
+          text: aiText,
+          isSystem: false,
+          timestamp: new Date(),
+        };
+
+        room.chats.push(aiMsg);
+        io.to(roomId).emit("message", aiMsg);
+      }, getAiDelay(room));
+    }
   });
 };
 
