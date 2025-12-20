@@ -1,10 +1,5 @@
-import {
-  getRoom,
-  saveRoomToDB,
-  getAiDelay,
-  generateAiTaunt,
-  emitAiTyping,
-} from "./helpers.js";
+import { getRoom, saveRoomToDB, getAiDelay, emitAiTyping } from "./helpers.js";
+import { aiRiddlerReply } from "../src/ai/riddler.js";
 
 export const setupChatSocket = (io, socket, rooms, saveTimeouts) => {
   socket.on("chatMessage", async ({ roomId, username, text } = {}) => {
@@ -66,7 +61,7 @@ export const setupChatSocket = (io, socket, rooms, saveTimeouts) => {
 
       setTimeout(async () => {
         try {
-          const aiText = await generateAiTaunt(room.currentWord, text);
+          const aiText = await aiRiddlerReply(room.currentWord, text);
 
           const aiMsg = {
             id: Date.now().toString(),

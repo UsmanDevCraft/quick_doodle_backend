@@ -105,14 +105,6 @@ export function getAiDelay(room) {
   return now - last < 2000 ? 600 : 1200;
 }
 
-export async function generateAiTaunt(word, guess) {
-  const lenDiff = guess.length - word.length;
-
-  if (lenDiff === 0) return "😏 Same length… but wrong soul.";
-  if (lenDiff > 0) return "📏 Too long. Cut it down.";
-  return "🤏 Too short. Stretch your thinking.";
-}
-
 export function emitAiTyping(io, roomId) {
   io.to(roomId).emit("aiTyping", true);
   setTimeout(() => {
