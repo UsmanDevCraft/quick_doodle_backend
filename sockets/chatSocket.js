@@ -1,4 +1,10 @@
-import { getRoom, saveRoomToDB } from "./helpers.js";
+import {
+  getRoom,
+  saveRoomToDB,
+  getAiDelay,
+  generateAiTaunt,
+  emitAiTyping,
+} from "./helpers.js";
 
 export const setupChatSocket = (io, socket, rooms, saveTimeouts) => {
   socket.on("chatMessage", async ({ roomId, username, text } = {}) => {
@@ -66,10 +72,3 @@ export const setupChatSocket = (io, socket, rooms, saveTimeouts) => {
     }
   });
 };
-
-function emitAiTyping(io, roomId) {
-  io.to(roomId).emit("aiTyping", true);
-  setTimeout(() => {
-    io.to(roomId).emit("aiTyping", false);
-  }, 1200);
-}

@@ -1,5 +1,12 @@
 import { generate } from "random-words";
-import { getRoom, publicPlayers, saveRoomToDB } from "../helpers.js";
+import {
+  getRoom,
+  publicPlayers,
+  saveRoomToDB,
+  getAiDelay,
+  generateAiTaunt,
+  emitAiTyping,
+} from "../helpers.js";
 
 export const guessWordEvent = (io, socket, rooms, saveTimeouts) => {
   socket.on("guessWord", async ({ roomId, username, guess } = {}) => {
