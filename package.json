@@ -16,7 +16,7 @@
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
     "langchain": "^0.3.36",
-    "mongodb": "^7.0.0",
+    "mongodb": "^6.21.0",
     "mongoose": "^8.19.1",
     "random-words": "^2.0.1",
     "socket.io": "^4.8.1"
