@@ -10,6 +10,7 @@ export const createRoomCore = async ({
   mode = "private",
 }) => {
   const word = generate({ minLength: 4, maxLength: 10 });
+  const isAiRoom = mode === "ai";
 
   rooms[roomId] = {
     roomId,
@@ -40,6 +41,26 @@ export const createRoomCore = async ({
     isActive: true,
     createdAt: new Date(),
   };
+
+  if (isAiRoom) {
+    rooms[roomId].players.push({
+      socketId: null,
+      username: "Riddler AI 🤖",
+      score: 0,
+      isHost: false,
+      isAi: true,
+      joinedAt: new Date(),
+      connected: true,
+    });
+
+    rooms[roomId].ai = {
+      name: "Riddler AI 🤖",
+      lastMessageAt: null,
+      hasGreeted: false,
+    };
+
+    // rooms[roomId].rounds[0].riddler = "Riddler AI 🤖";
+  }
 
   await saveRoomToDB(rooms[roomId], saveTimeouts, true);
 

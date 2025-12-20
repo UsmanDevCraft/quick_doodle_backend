@@ -10,9 +10,12 @@
   "author": "usman",
   "license": "ISC",
   "dependencies": {
+    "@langchain/community": "^0.3.25",
+    "@langchain/core": "^0.3.79",
     "cors": "^2.8.5",
-    "dotenv": "^17.2.3",
+    "dotenv": "^16.6.1",
     "express": "^5.1.0",
+    "langchain": "^0.3.36",
     "mongodb": "^7.0.0",
     "mongoose": "^8.19.1",
     "random-words": "^2.0.1",
