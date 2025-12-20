@@ -23,7 +23,7 @@ export const setupChatSocket = (io, socket, rooms, saveTimeouts) => {
     // Prevent AI reacting to itself
     if (username === room.ai?.name) return;
 
-    // AI greeting (ONCE)
+    // 1️⃣ AI GREETING (ONCE)
     if (!room.ai.hasGreeted) {
       room.ai.hasGreeted = true;
 
@@ -44,6 +44,22 @@ export const setupChatSocket = (io, socket, rooms, saveTimeouts) => {
 
       return;
     }
+
+    // 2️⃣ AI NORMAL CHAT REACTION
+    emitAiTyping(io, roomId);
+
+    setTimeout(() => {
+      const aiMsg = {
+        id: Date.now().toString(),
+        player: room.ai.name,
+        text: "👀 Interesting… but words matter more than talk.",
+        isSystem: false,
+        timestamp: new Date(),
+      };
+
+      room.chats.push(aiMsg);
+      io.to(roomId).emit("message", aiMsg);
+    }, getAiDelay(room));
   });
 };
 
