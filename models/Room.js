@@ -36,7 +36,7 @@ const ChatSchema = new mongoose.Schema({
 const RoomSchema = new mongoose.Schema({
   roomId: { type: String, required: true, unique: true },
   host: String,
-  mode: { type: String, enum: ["global", "private"], default: "private" },
+  mode: { type: String, enum: ["global", "private", "ai"], default: "private" },
   currentWord: String,
   currentRound: { type: Number, default: 1 },
   players: [PlayerSchema],
