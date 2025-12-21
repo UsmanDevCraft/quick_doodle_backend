@@ -57,7 +57,7 @@ export const setupChatSocket = (io, socket, rooms, saveTimeouts) => {
 
     // 2️⃣ AI NORMAL CHAT REACTION
     if (room.mode === "ai" && room.ai) {
-      emitAiTyping(io, roomId);
+      emitAiTyping(io, roomId, true);
 
       setTimeout(async () => {
         try {
@@ -75,6 +75,8 @@ export const setupChatSocket = (io, socket, rooms, saveTimeouts) => {
           io.to(roomId).emit("message", aiMsg);
         } catch (err) {
           console.error("AI chat error:", err);
+        } finally {
+          emitAiTyping(io, roomId, false);
         }
       }, getAiDelay(room));
     }

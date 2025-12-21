@@ -121,21 +121,27 @@ export const guessWordEvent = (io, socket, rooms, saveTimeouts) => {
       });
 
       if (room.mode === "ai") {
-        emitAiTyping(io, roomId);
+        emitAiTyping(io, roomId, true);
 
         setTimeout(async () => {
-          const aiText = await aiRiddlerReply(room.currentWord, guess);
+          try {
+            const aiText = await aiRiddlerReply(room.currentWord, guess);
 
-          const aiMsg = {
-            id: Date.now().toString(),
-            player: room.ai.name,
-            text: aiText,
-            isSystem: false,
-            timestamp: new Date(),
-          };
+            const aiMsg = {
+              id: Date.now().toString(),
+              player: room.ai.name,
+              text: aiText,
+              isSystem: false,
+              timestamp: new Date(),
+            };
 
-          room.chats.push(aiMsg);
-          io.to(roomId).emit("message", aiMsg);
+            room.chats.push(aiMsg);
+            io.to(roomId).emit("message", aiMsg);
+          } catch (err) {
+            console.error("AI guess error:", err);
+          } finally {
+            emitAiTyping(io, roomId, false);
+          }
         }, getAiDelay(room));
       }
     }
