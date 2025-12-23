@@ -105,9 +105,6 @@ export function getAiDelay(room) {
   return now - last < 2000 ? 600 : 1200;
 }
 
-export function emitAiTyping(io, roomId) {
-  io.to(roomId).emit("aiTyping", true);
-  setTimeout(() => {
-    io.to(roomId).emit("aiTyping", false);
-  }, 1200);
+export function emitAiTyping(io, roomId, isTyping) {
+  io.to(roomId).emit("aiTyping", isTyping);
 }
