@@ -1,5 +1,5 @@
 import { getRoom, saveRoomToDB, getAiDelay, emitAiTyping } from "./helpers.js";
-import { aiRiddlerReply } from "../src/ai/riddler.js";
+import { aiRiddlerReply, aiGreeting } from "../src/ai/riddler.js";
 
 export const setupChatSocket = (io, socket, rooms, saveTimeouts) => {
   socket.on("chatMessage", async ({ roomId, username, text } = {}) => {
@@ -37,20 +37,26 @@ export const setupChatSocket = (io, socket, rooms, saveTimeouts) => {
     if (!room.ai.hasGreeted) {
       room.ai.hasGreeted = true;
 
-      emitAiTyping(io, roomId);
+      emitAiTyping(io, roomId, true);
 
-      setTimeout(() => {
-        const aiMsg = {
-          id: Date.now().toString(),
-          player: room.ai.name,
-          text: "😈 Hehe… ready when you are. Take a guess.",
-          isSystem: false,
-          timestamp: new Date(),
-        };
+      setTimeout(async () => {
+        try {
+          const aiText = await aiGreeting();
 
-        room.chats.push(aiMsg);
-        io.to(roomId).emit("message", aiMsg);
-      }, 1200);
+          const aiMsg = {
+            id: Date.now().toString(),
+            player: room.ai.name,
+            text: aiText,
+            isSystem: false,
+            timestamp: new Date(),
+          };
+
+          room.chats.push(aiMsg);
+          io.to(roomId).emit("message", aiMsg);
+        } finally {
+          emitAiTyping(io, roomId, false);
+        }
+      }, getAiDelay(room));
 
       return;
     }
